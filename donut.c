@@ -994,11 +994,13 @@ static int build_instance(PDONUT_CONFIG c) {
         strcpy(inst->kernelbase, "kernelbase");
         strcpy(inst->cmd_syms,   "_acmdln;__argv;__p__acmdln;__p___argv;_wcmdln;__wargv;__p__wcmdln;__p___wargv");
       }
-      // does user want loader to run the entrypoint as a thread?
-      if(c->thread != 0) {
+      // Intercept exit-related API when:
+      // 1) user explicitly requested thread mode (-t), or
+      // 2) exit_opt is EXIT_THREAD (user wants host process to survive)
+      if(c->thread != 0 || c->exit_opt == DONUT_OPT_EXIT_THREAD) {
         DPRINT("Copying strings required to intercept exit-related API");
         // these exit-related API will be replaced with pointer to RtlExitUserThread
-        strcpy(inst->exit_api, "ExitProcess;exit;_exit;_cexit;_c_exit;quick_exit;_Exit;_o_exit");
+        strcpy(inst->exit_api, "ExitProcess;TerminateProcess;NtTerminateProcess;CorExitProcess;exit;_exit;_cexit;_c_exit;quick_exit;_Exit;_o_exit");
       }
     }
 

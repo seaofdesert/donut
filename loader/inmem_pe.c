@@ -320,9 +320,9 @@ VOID RunPE(PDONUT_INSTANCE inst, PDONUT_MODULE mod) {
             // Resolve by name
             ibn = RVA2VA(PIMAGE_IMPORT_BY_NAME, cs, oft->u1.AddressOfData);
 
-            // run entrypoint as thread?
-            if(mod->thread != 0) {
-              // if this is an exit-related API, replace it with RtlExitUserThread
+            // if the generator populated exit_api, intercept exit-related API
+            // to prevent them from terminating the host process
+            if(inst->exit_api[0] != 0) {
               if(IsExitAPI(inst, ibn->Name)) {
                 DPRINT("Replacing %s!%s with ntdll!RtlExitUserThread", name, ibn->Name);
                 ft->u1.Function = (ULONG_PTR)inst->api.RtlExitUserThread;
@@ -365,6 +365,14 @@ VOID RunPE(PDONUT_INSTANCE inst, PDONUT_MODULE mod) {
           } else {
             // Resolve by name
             ibn = RVA2VA(PIMAGE_IMPORT_BY_NAME, cs, oft->u1.AddressOfData);
+            // also intercept exit-related API in delayed imports
+            if(inst->exit_api[0] != 0) {
+              if(IsExitAPI(inst, ibn->Name)) {
+                DPRINT("Replacing %s!%s (delayed) with ntdll!RtlExitUserThread", name, ibn->Name);
+                ft->u1.Function = (ULONG_PTR)inst->api.RtlExitUserThread;
+                continue;
+              }
+            }
             ft->u1.Function = (ULONG_PTR)xGetProcAddress(inst, dll, ibn->Name, 0);
           }
         }
@@ -581,8 +589,21 @@ VOID RunPE(PDONUT_INSTANCE inst, PDONUT_MODULE mod) {
           inst->api.WaitForSingleObject(hThread, INFINITE);
           DPRINT("Process terminated");
         }
+      } else if (inst->exit_api[0] != 0) {
+        // Exit API hooks are active (exit_opt == EXIT_THREAD).
+        // Run in a new thread so IAT hooks protect the host process.
+        DPRINT("Creating thread for entrypoint of EXE (exit hooks active) : %p\n\n", (PVOID)Start);
+        hThread = inst->api.CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)Start, NULL, 0, NULL);
+        if(hThread != NULL) {
+          inst->api.WaitForSingleObject(hThread, INFINITE);
+          DPRINT("Process terminated");
+        } else {
+          // fallback: run directly (host may not survive if exit API is called)
+          DPRINT("Executing entrypoint directly (thread creation failed): %p\n\n", (PVOID)Start);
+          Start(NtCurrentTeb()->ProcessEnvironmentBlock);
+        }
       } else {
-        // if ExitProces is called, this will terminate the host process.
+        // if ExitProcess is called, this will terminate the host process.
         DPRINT("Executing entrypoint: %p\n\n", (PVOID)Start);
         Start(NtCurrentTeb()->ProcessEnvironmentBlock);
       }

@@ -250,3 +250,8 @@ AkavacheSqliteLinkerOverride.cs
 NuGetBuild
 WiX.Toolset.DummyFile.txt
 GitHubVS.sln.DotSettings
+*.exe
+/include/donut.res
+*.dll
+*.exp
+*.lib
